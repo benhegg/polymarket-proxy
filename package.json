@@ -1,5 +1,8 @@
 {
   "name": "polymarket-proxy",
   "version": "1.0.0",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@vercel/kv": "^1.0.1"
+  }
 }
