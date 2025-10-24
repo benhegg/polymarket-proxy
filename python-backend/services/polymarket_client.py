@@ -74,6 +74,8 @@ class PolymarketClient:
         """
         Fetch recent trades from CLOB API
         Used to detect large orders
+        Note: This endpoint requires authentication, which we don't have.
+        Returns empty list if unauthorized (401).
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -84,11 +86,19 @@ class PolymarketClient:
                         "limit": limit
                     }
                 )
+
+                # Handle 401 Unauthorized silently (expected without API key)
+                if response.status_code == 401:
+                    logger.debug(f"CLOB trades endpoint requires authentication (market {market_id})")
+                    return []
+
                 response.raise_for_status()
                 return response.json()
 
         except Exception as e:
-            logger.error(f"Error fetching trades for {market_id}: {e}")
+            # Only log unexpected errors
+            if "401" not in str(e):
+                logger.error(f"Error fetching trades for {market_id}: {e}")
             return []
 
     async def get_market_prices(self, token_id: str) -> Optional[Dict[str, float]]:
