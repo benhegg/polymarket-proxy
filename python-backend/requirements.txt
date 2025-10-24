@@ -6,7 +6,6 @@ pydantic-settings==2.1.0
 
 # HTTP Client
 httpx==0.25.1
-requests==2.31.0
 
 # Database
 aiosqlite==0.19.0
@@ -14,10 +13,10 @@ aiosqlite==0.19.0
 # Background Tasks
 apscheduler==3.10.4
 
-# Telegram
-python-telegram-bot==20.7
-
 # Utilities
 python-dotenv==1.0.0
 python-dateutil==2.8.2
+
+# Optional: Telegram (requires Rust compiler - install separately if needed)
+# python-telegram-bot==20.7
 

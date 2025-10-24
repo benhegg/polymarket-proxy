@@ -4,20 +4,33 @@ Sends alerts for high-confidence whale signals (score >= 75)
 """
 import logging
 from typing import Dict, Any, List
-from telegram import Bot
-from telegram.error import TelegramError
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# Try to import Telegram - it's optional
+try:
+    from telegram import Bot
+    from telegram.error import TelegramError
+    TELEGRAM_AVAILABLE = True
+except ImportError:
+    TELEGRAM_AVAILABLE = False
+    logger.warning("python-telegram-bot not installed. Telegram notifications disabled.")
 
 
 class TelegramNotifier:
     """Sends Telegram notifications for whale alerts"""
 
     def __init__(self):
-        self.enabled = settings.TELEGRAM_ENABLED
+        self.enabled = settings.TELEGRAM_ENABLED and TELEGRAM_AVAILABLE
         self.bot = None
         self.chat_id = settings.TELEGRAM_CHAT_ID
+
+        if not TELEGRAM_AVAILABLE and settings.TELEGRAM_ENABLED:
+            logger.warning("Telegram is enabled in config but python-telegram-bot is not installed.")
+            logger.warning("To enable Telegram: pip install python-telegram-bot")
+            self.enabled = False
+            return
 
         if self.enabled and settings.TELEGRAM_BOT_TOKEN:
             try:
