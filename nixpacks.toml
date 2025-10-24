@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["python311"]
-
-[phases.install]
-cmds = ["pip install -r python-backend/requirements.txt"]
-
-[start]
-cmd = "bash start-railway.sh"

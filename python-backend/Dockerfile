@@ -16,4 +16,5 @@ RUN mkdir -p /app/data
 EXPOSE 8000
 
 # Start both the API server and poller
-CMD python -m uvicorn app:app --host 0.0.0.0 --port 8000 & python poller.py && wait
+# Use PORT env var if provided (Railway), otherwise default to 8000
+CMD python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000} & python poller.py && wait
