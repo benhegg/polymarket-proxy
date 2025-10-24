@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polymarket Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900">
+  <div id="app" class="min-h-screen p-6">
+    <div class="max-w-7xl mx-auto">
+      <!-- Header -->
+      <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 mb-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-4xl font-bold text-white">🚀 Polymarket Live</h1>
+            <p class="text-blue-100 mt-2">Real-time data loading...</p>
+          </div>
+          <button 
+            id="refreshBtn" 
+            class="px-6 py-3 bg-white text-blue-600 rounded-lg font-bold hover:bg-blue-50"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div id="loading" class="text-center py-12">
+        <div class="text-white text-2xl">Loading markets...</div>
+      </div>
+
+      <!-- Error -->
+      <div id="error" class="hidden bg-red-900 border border-red-700 rounded-lg p-4 mb-6">
+        <div class="text-red-100" id="errorMsg"></div>
+      </div>
+
+      <!-- Markets Container -->
+      <div id="markets" class="space-y-4"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = '/api/markets';
+    let markets = [];
+
+    function showError(msg) {
+      document.getElementById('error').classList.remove('hidden');
+      document.getElementById('errorMsg').textContent = msg;
+      document.getElementById('loading').classList.add('hidden');
+    }
+
+    function hideError() {
+      document.getElementById('error').classList.add('hidden');
+    }
+
+    function getBetRec(volume) {
+      if (volume > 20000000) return { size: '$75-100', conf: 'HIGH', color: 'bg-green-600' };
+      if (volume > 10000000) return { size: '$40-60', conf: 'MEDIUM', color: 'bg-yellow-600' };
+      if (volume > 5000000) return { size: '$20-40', conf: 'MEDIUM', color: 'bg-yellow-600' };
+      return { size: '$10-20', conf: 'LOW', color: 'bg-orange-600' };
+    }
+
+    function renderMarkets() {
+      const container = document.getElementById('markets');
+      container.innerHTML = '';
+
+      if (markets.length === 0) {
+        container.innerHTML = '<div class="text-white text-center py-12">No markets found</div>';
+        return;
+      }
+
+      // Sort by volume
+      const sorted = [...markets].sort((a, b) => b.volume - a.volume).slice(0, 20);
+
+      sorted.forEach(market => {
+        const rec = getBetRec(market.volume);
+        const potReturn = ((1 / market.price - 1) * 100).toFixed(0);
+        const impliedProb = (market.price * 100).toFixed(0);
+
+        const card = document.createElement('div');
+        card.className = 'bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-blue-500 transition';
+        card.innerHTML = `
+          <div class="flex items-start justify-between mb-4">
+            <div class="flex-1">
+              <h2 class="text-xl font-bold text-white mb-2">${market.question}</h2>
+              <span class="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm font-medium">
+                ${market.category}
+              </span>
+            </div>
+            <div class="${rec.color} px-4 py-2 rounded-lg font-bold text-white">
+              ${rec.conf}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-4 gap-6 mb-4">
+            <div>
+              <div class="text-sm text-gray-400">YES Price</div>
+              <div class="text-2xl font-bold text-white">${impliedProb}¢</div>
+              <div class="text-xs text-gray-500">${impliedProb}% prob</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Volume</div>
+              <div class="text-2xl font-bold text-white">$${(market.volume / 1000000).toFixed(1)}M</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Return</div>
+              <div class="text-2xl font-bold text-green-400">+${potReturn}%</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Bet Size</div>
+              <div class="text-2xl font-bold text-purple-400">${rec.size}</div>
+            </div>
+          </div>
+
+          <div class="border-t border-gray-700 pt-4 flex justify-between items-center">
+            <div class="text-sm text-gray-300">Buy YES at ${impliedProb}¢</div>
+            <a 
+              href="https://polymarket.com/" 
+              target="_blank"
+              class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg"
+            >
+              Place Bet →
+            </a>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+
+      document.getElementById('loading').classList.add('hidden');
+    }
+
+    async function fetchMarkets() {
+      hideError();
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('refreshBtn').disabled = true;
+      document.getElementById('refreshBtn').textContent = 'Loading...';
+
+      try {
+        console.log('Fetching from:', API_URL);
+        const response = await fetch(API_URL);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('Received data:', data.length, 'markets');
+
+        markets = data.map(m => {
+          try {
+            const prices = JSON.parse(m.outcomePrices || '["0.5","0.5"]');
+            return {
+              question: m.question,
+              category: m.category || 'Other',
+              volume: parseFloat(m.volume || 0),
+              price: parseFloat(prices[0] || 0.5),
+              slug: m.slug
+            };
+          } catch (e) {
+            return null;
+          }
+        }).filter(m => m && m.volume > 0);
+
+        console.log('Parsed', markets.length, 'valid markets');
+        renderMarkets();
+
+      } catch (err) {
+        console.error('Fetch error:', err);
+        showError('Failed to load markets: ' + err.message);
+      } finally {
+        document.getElementById('refreshBtn').disabled = false;
+        document.getElementById('refreshBtn').textContent = 'Refresh';
+      }
+    }
+
+    // Event listeners
+    document.getElementById('refreshBtn').addEventListener('click', fetchMarkets);
+
+    // Load on page load
+    fetchMarkets();
+  </script>
+</body>
+</html>

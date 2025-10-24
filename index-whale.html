@@ -93,13 +93,11 @@
 
   <script>
     const MARKETS_API_URL = '/api/markets';
-    let PYTHON_API_URL = localStorage.getItem('pythonApiUrl') || '';
+    let PYTHON_API_URL = 'https://polymarket-whale-tracker.onrender.com';
     let markets = [];
 
-    // Load saved API URL
-    if (PYTHON_API_URL) {
-      document.getElementById('pythonApiUrl').value = PYTHON_API_URL;
-    }
+    // Pre-configured with Render backend
+    document.getElementById('pythonApiUrl').value = PYTHON_API_URL;
 
     // Config panel toggle
     document.getElementById('configBtn').addEventListener('click', () => {
