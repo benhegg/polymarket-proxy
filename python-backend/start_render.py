@@ -14,6 +14,7 @@ os.chdir('/opt/render/project/src/python-backend')
 # Get port from environment
 port = os.environ.get('PORT', '8000')
 
+print(f"🐍 Python version: {sys.version}")
 print(f"🚀 Starting Polymarket Whale Tracker on port {port}")
 
 # Start API server
@@ -45,8 +46,14 @@ def shutdown(signum, frame):
 signal.signal(signal.SIGTERM, shutdown)
 signal.signal(signal.SIGINT, shutdown)
 
-# Wait for both processes
+# Keep running - monitor both processes
 try:
-    api_process.wait()
+    while True:
+        time.sleep(1)
+        # Check if processes are still alive
+        if api_process.poll() is not None:
+            print(f"⚠️ API process died with code {api_process.returncode}")
+        if poller_process.poll() is not None:
+            print(f"⚠️ Poller process died with code {poller_process.returncode}")
 except KeyboardInterrupt:
     shutdown(None, None)
