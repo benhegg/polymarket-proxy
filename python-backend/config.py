@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     PAPER_TRADE_HOLD_HOURS: int = 24  # How long to hold paper trades
 
     # Database
-    DATABASE_PATH: str = "./data/whales.db"
+    DATABASE_PATH: str = "/tmp/whales.db"  # Use /tmp on Render (writable)
     DATA_RETENTION_DAYS: int = 30
 
     # API Server
