@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polymarket Whale Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900">
+  <div id="app" class="min-h-screen p-6">
+    <div class="max-w-7xl mx-auto">
+      <!-- Header -->
+      <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 mb-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-4xl font-bold text-white">🐋 Polymarket Whale Tracker</h1>
+            <p class="text-blue-100 mt-2">AI-powered whale signal detection & betting recommendations</p>
+          </div>
+          <div class="flex gap-4">
+            <button id="configBtn" class="px-6 py-3 bg-gray-800 text-white rounded-lg font-bold hover:bg-gray-700">
+              ⚙️ Config
+            </button>
+            <button id="refreshBtn" class="px-6 py-3 bg-white text-blue-600 rounded-lg font-bold hover:bg-blue-50">
+              🔄 Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Config Panel (Hidden by default) -->
+      <div id="configPanel" class="hidden bg-gray-800 rounded-lg p-6 mb-6 border border-gray-700">
+        <h3 class="text-white text-xl font-bold mb-4">Python Backend Configuration</h3>
+        <div class="mb-4">
+          <label class="block text-gray-300 mb-2">Python API URL:</label>
+          <input
+            type="text"
+            id="pythonApiUrl"
+            class="w-full px-4 py-2 rounded bg-gray-700 text-white border border-gray-600"
+            placeholder="http://localhost:8000 or https://your-railway-app.railway.app"
+          />
+          <p class="text-gray-400 text-sm mt-2">
+            Enter your deployed Python backend URL (Railway, Render, or local)
+          </p>
+        </div>
+        <button id="saveConfigBtn" class="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">
+          Save & Reload
+        </button>
+      </div>
+
+      <!-- Paper Trading Stats -->
+      <div id="paperTradingStats" class="hidden bg-gray-800 rounded-lg p-6 mb-6 border border-gray-700">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-2xl font-bold text-white">📊 Paper Trading Performance (7 Days)</h2>
+        </div>
+        <div id="statsGrid" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+      </div>
+
+      <!-- Top Whale Recommendations -->
+      <div id="whaleRecommendations" class="mb-6">
+        <div class="bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg shadow-lg p-6 mb-4">
+          <h2 class="text-3xl font-bold text-white">🔥 Top Whale Recommendations</h2>
+          <p class="text-purple-100 mt-2">High-confidence bets based on whale activity signals</p>
+        </div>
+        <div id="recommendationsContainer" class="space-y-4">
+          <div class="text-center text-gray-400 py-12">
+            Configure Python API URL to see whale recommendations
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Markets -->
+      <div>
+        <div class="bg-gray-800 rounded-lg p-6 mb-4">
+          <h2 class="text-2xl font-bold text-white">📈 All Active Markets</h2>
+          <p class="text-gray-400 mt-2">Sorted by trading volume</p>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" class="text-center py-12">
+          <div class="text-white text-2xl">Loading markets...</div>
+        </div>
+
+        <!-- Error -->
+        <div id="error" class="hidden bg-red-900 border border-red-700 rounded-lg p-4 mb-6">
+          <div class="text-red-100" id="errorMsg"></div>
+        </div>
+
+        <!-- Markets Container -->
+        <div id="markets" class="space-y-4"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MARKETS_API_URL = '/api/markets';
+    let PYTHON_API_URL = localStorage.getItem('pythonApiUrl') || '';
+    let markets = [];
+
+    // Load saved API URL
+    if (PYTHON_API_URL) {
+      document.getElementById('pythonApiUrl').value = PYTHON_API_URL;
+    }
+
+    // Config panel toggle
+    document.getElementById('configBtn').addEventListener('click', () => {
+      const panel = document.getElementById('configPanel');
+      panel.classList.toggle('hidden');
+    });
+
+    // Save config
+    document.getElementById('saveConfigBtn').addEventListener('click', () => {
+      const url = document.getElementById('pythonApiUrl').value.trim();
+      localStorage.setItem('pythonApiUrl', url);
+      PYTHON_API_URL = url;
+      alert('Configuration saved! Reloading data...');
+      fetchAll();
+      document.getElementById('configPanel').classList.add('hidden');
+    });
+
+    function showError(msg) {
+      document.getElementById('error').classList.remove('hidden');
+      document.getElementById('errorMsg').textContent = msg;
+      document.getElementById('loading').classList.add('hidden');
+    }
+
+    function hideError() {
+      document.getElementById('error').classList.add('hidden');
+    }
+
+    function getBetRec(volume) {
+      if (volume > 20000000) return { size: '$75-100', conf: 'HIGH', color: 'bg-green-600' };
+      if (volume > 10000000) return { size: '$40-60', conf: 'MEDIUM', color: 'bg-yellow-600' };
+      if (volume > 5000000) return { size: '$20-40', conf: 'MEDIUM', color: 'bg-yellow-600' };
+      return { size: '$10-20', conf: 'LOW', color: 'bg-orange-600' };
+    }
+
+    function getConfidenceBadge(confidence) {
+      const badges = {
+        'HIGH': { label: '🔥 HIGH', color: 'bg-red-600' },
+        'MEDIUM': { label: '⚡ MEDIUM', color: 'bg-yellow-600' },
+        'LOW': { label: '📊 LOW', color: 'bg-blue-600' },
+        'VERY_LOW': { label: '📉 VERY LOW', color: 'bg-gray-600' }
+      };
+      return badges[confidence] || badges['LOW'];
+    }
+
+    function getSignalBadge(signal) {
+      const badges = {
+        'volume_spike': { label: '📈 Volume Spike', color: 'bg-green-700' },
+        'smart_money': { label: '🧠 Smart Money', color: 'bg-purple-700' },
+        'book_imbalance': { label: '⚖️ Book Imbalance', color: 'bg-blue-700' },
+        'liquidity_drain': { label: '💧 Liquidity Drain', color: 'bg-orange-700' },
+        'large_order': { label: '🐋 Large Order', color: 'bg-pink-700' }
+      };
+      return badges[signal] || { label: signal, color: 'bg-gray-700' };
+    }
+
+    function renderRecommendations(recommendations) {
+      const container = document.getElementById('recommendationsContainer');
+
+      if (!recommendations || recommendations.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-12">No whale signals detected yet. Waiting for next poll...</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+
+      recommendations.forEach((rec, index) => {
+        const conf = getConfidenceBadge(rec.confidence);
+        const directionEmoji = rec.direction === 'YES' ? '🟢' : rec.direction === 'NO' ? '🔴' : '⚪';
+
+        const card = document.createElement('div');
+        card.className = 'bg-gray-800 rounded-lg p-6 border-2 border-purple-500 hover:border-purple-400 transition';
+
+        // Build signals badges HTML
+        const signalsBadgesHTML = rec.signals_fired.map(signal => {
+          const badge = getSignalBadge(signal);
+          return `<span class="px-2 py-1 ${badge.color} text-white rounded text-xs">${badge.label}</span>`;
+        }).join(' ');
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between mb-4">
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-3xl font-bold text-white">#${index + 1}</span>
+                <div class="${conf.color} px-4 py-2 rounded-lg font-bold text-white">
+                  ${conf.label}
+                </div>
+              </div>
+              <h2 class="text-xl font-bold text-white mb-2">${rec.question}</h2>
+              <span class="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm font-medium">
+                ${rec.category || 'Unknown'}
+              </span>
+            </div>
+            <div class="text-right">
+              <div class="text-5xl font-bold text-purple-400">${rec.whale_score}</div>
+              <div class="text-sm text-gray-400">Whale Score</div>
+            </div>
+          </div>
+
+          <div class="bg-gray-900 rounded-lg p-4 mb-4">
+            <div class="text-lg font-bold text-white mb-2">
+              ${directionEmoji} Recommendation: <span class="text-purple-400">${rec.direction}</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              ${signalsBadgesHTML}
+            </div>
+          </div>
+
+          <div class="border-t border-gray-700 pt-4 flex justify-between items-center">
+            <div class="text-sm text-gray-300">
+              ${rec.signals_fired.length} whale signal${rec.signals_fired.length > 1 ? 's' : ''} detected
+            </div>
+            <a
+              href="https://polymarket.com/event/${rec.slug || ''}"
+              target="_blank"
+              class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg"
+            >
+              View Market →
+            </a>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderPaperTradingStats(stats) {
+      const container = document.getElementById('statsGrid');
+      const s = stats.stats || {};
+
+      const statsHTML = `
+        <div class="bg-gray-900 rounded-lg p-4">
+          <div class="text-gray-400 text-sm mb-1">Total Trades</div>
+          <div class="text-2xl font-bold text-white">${s.total_trades || 0}</div>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-4">
+          <div class="text-gray-400 text-sm mb-1">Win Rate</div>
+          <div class="text-2xl font-bold ${s.win_rate >= 60 ? 'text-green-400' : 'text-yellow-400'}">${(s.win_rate || 0).toFixed(1)}%</div>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-4">
+          <div class="text-gray-400 text-sm mb-1">Total P&L</div>
+          <div class="text-2xl font-bold ${s.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}">$${(s.total_pnl || 0).toFixed(2)}</div>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-4">
+          <div class="text-gray-400 text-sm mb-1">High Score Win Rate</div>
+          <div class="text-2xl font-bold text-purple-400">${(s.high_score_win_rate || 0).toFixed(1)}%</div>
+          <div class="text-xs text-gray-500">${s.high_score_trades || 0} trades (score ≥75)</div>
+        </div>
+      `;
+
+      container.innerHTML = statsHTML;
+      document.getElementById('paperTradingStats').classList.remove('hidden');
+    }
+
+    function renderMarkets() {
+      const container = document.getElementById('markets');
+      container.innerHTML = '';
+
+      if (markets.length === 0) {
+        container.innerHTML = '<div class="text-white text-center py-12">No markets found</div>';
+        return;
+      }
+
+      const sorted = [...markets].sort((a, b) => b.volume - a.volume).slice(0, 20);
+
+      sorted.forEach(market => {
+        const rec = getBetRec(market.volume);
+        const potReturn = ((1 / market.price - 1) * 100).toFixed(0);
+        const impliedProb = (market.price * 100).toFixed(0);
+
+        const card = document.createElement('div');
+        card.className = 'bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-blue-500 transition';
+        card.innerHTML = `
+          <div class="flex items-start justify-between mb-4">
+            <div class="flex-1">
+              <h2 class="text-xl font-bold text-white mb-2">${market.question}</h2>
+              <span class="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm font-medium">
+                ${market.category}
+              </span>
+            </div>
+            <div class="${rec.color} px-4 py-2 rounded-lg font-bold text-white">
+              ${rec.conf}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-4 gap-6 mb-4">
+            <div>
+              <div class="text-sm text-gray-400">YES Price</div>
+              <div class="text-2xl font-bold text-white">${impliedProb}¢</div>
+              <div class="text-xs text-gray-500">${impliedProb}% prob</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Volume</div>
+              <div class="text-2xl font-bold text-white">$${(market.volume / 1000000).toFixed(1)}M</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Return</div>
+              <div class="text-2xl font-bold text-green-400">+${potReturn}%</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Bet Size</div>
+              <div class="text-2xl font-bold text-purple-400">${rec.size}</div>
+            </div>
+          </div>
+
+          <div class="border-t border-gray-700 pt-4 flex justify-between items-center">
+            <div class="text-sm text-gray-300">Buy YES at ${impliedProb}¢</div>
+            <a
+              href="https://polymarket.com/"
+              target="_blank"
+              class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg"
+            >
+              Place Bet →
+            </a>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+
+      document.getElementById('loading').classList.add('hidden');
+    }
+
+    async function fetchWhaleRecommendations() {
+      if (!PYTHON_API_URL) return;
+
+      try {
+        const response = await fetch(`${PYTHON_API_URL}/api/recommendations`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        renderRecommendations(data.recommendations);
+      } catch (err) {
+        console.error('Error fetching recommendations:', err);
+        document.getElementById('recommendationsContainer').innerHTML =
+          `<div class="text-center text-red-400 py-12">Failed to load recommendations: ${err.message}<br><br>Check Python backend URL in Config</div>`;
+      }
+    }
+
+    async function fetchPaperTradingStats() {
+      if (!PYTHON_API_URL) return;
+
+      try {
+        const response = await fetch(`${PYTHON_API_URL}/api/paper-trading/stats?days=7`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        renderPaperTradingStats(data);
+      } catch (err) {
+        console.error('Error fetching paper trading stats:', err);
+      }
+    }
+
+    async function fetchMarkets() {
+      hideError();
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('refreshBtn').disabled = true;
+      document.getElementById('refreshBtn').textContent = '🔄 Loading...';
+
+      try {
+        const response = await fetch(MARKETS_API_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+        const data = await response.json();
+        markets = data.map(m => {
+          try {
+            const prices = JSON.parse(m.outcomePrices || '["0.5","0.5"]');
+            return {
+              question: m.question,
+              category: m.category || 'Other',
+              volume: parseFloat(m.volume || 0),
+              price: parseFloat(prices[0] || 0.5),
+              slug: m.slug
+            };
+          } catch (e) {
+            return null;
+          }
+        }).filter(m => m && m.volume > 0);
+
+        renderMarkets();
+      } catch (err) {
+        console.error('Fetch error:', err);
+        showError('Failed to load markets: ' + err.message);
+      } finally {
+        document.getElementById('refreshBtn').disabled = false;
+        document.getElementById('refreshBtn').textContent = '🔄 Refresh';
+      }
+    }
+
+    async function fetchAll() {
+      await Promise.all([
+        fetchMarkets(),
+        fetchWhaleRecommendations(),
+        fetchPaperTradingStats()
+      ]);
+    }
+
+    // Event listeners
+    document.getElementById('refreshBtn').addEventListener('click', fetchAll);
+
+    // Load on page load
+    fetchAll();
+
+    // Auto-refresh every 5 minutes
+    setInterval(fetchAll, 5 * 60 * 1000);
+  </script>
+</body>
+</html>
