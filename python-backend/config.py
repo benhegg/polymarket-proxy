@@ -2,7 +2,7 @@
 Configuration for Polymarket Whale Tracker
 """
 import os
-from pydantic_settings import BaseSettings
+from pydantic import BaseSettings
 from typing import Optional
 
 
